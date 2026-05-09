@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: prism-core
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/prism_db
+    username: ${DB_USERNAME:prism}
+    password: ${DB_PASSWORD:prism}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+prism:
+  jwt:
+    secret: ${JWT_SECRET:prism-super-secret-key-change-in-prod-minimum-256bits-long}
+    access-token-expiry-ms: 86400000        # 24 hours
+    refresh-token-expiry-ms: 2592000000     # 30 days
+
+  otp:
+    expiry-minutes: 5
+    length: 6
+    mock-enabled: true                      # Logs OTP to console in dev
+
+  scoring:
+    cache-validity-days: 30
+    current-rule-set-version: "v1.0"
+
+  mock:
+    sms-extractor-base-url: http://localhost:8080/mock/sms-extractor
+    pan-verifier-base-url: http://localhost:8080/mock/pan-verifier
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.prism: DEBUG
+    org.springframework.security: INFO
