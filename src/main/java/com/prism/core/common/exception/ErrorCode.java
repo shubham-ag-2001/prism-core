@@ -33,4 +33,11 @@ public final class ErrorCode {
     // Provider
     public static final String PROVIDER_ERROR       = "PROVIDER_ERROR";
     public static final String SMS_EXTRACTION_FAILED = "SMS_EXTRACTION_FAILED";
+    public static final String EMPLOYER_NOT_FOUND   = "EMPLOYER_NOT_FOUND";
+
+    // Bank
+    public static final String BANK_NOT_FOUND       = "BANK_NOT_FOUND";
+
+    // Account
+    public static final String ACCOUNT_ALREADY_INACTIVE = "ACCOUNT_ALREADY_INACTIVE";
 }

@@ -1,5 +1,7 @@
 package com.prism.core.user.service;
 
+import com.prism.core.audit.service.AuditService;
+import com.prism.core.auth.repository.RefreshTokenRepository;
 import com.prism.core.common.exception.PrismException;
 import com.prism.core.user.dto.request.UpdateProfileRequest;
 import com.prism.core.user.dto.response.UserProfileResponse;
@@ -19,6 +21,8 @@ public class UserService {
 
     private final UserRepository        userRepository;
     private final UserProfileRepository userProfileRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final AuditService           auditService;
 
     @Transactional(readOnly = true)
     public UserProfileResponse getProfile(UUID userId) {
@@ -56,5 +60,23 @@ public class UserService {
 
         userProfileRepository.save(profile);
         return getProfile(userId);
+    }
+
+    /**
+     * Soft-delete: marks user inactive + revokes all refresh tokens.
+     * Preserves audit log, scoring history, and lender records for compliance.
+     */
+    @Transactional
+    public void deleteUser(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> PrismException.notFound("User not found"));
+
+        user.setActive(false);
+        userRepository.save(user);
+
+        // Revoke all active sessions
+        refreshTokenRepository.deleteAllByUserId(userId);
+
+        auditService.log("USER", userId.toString(), "ACCOUNT_DELETED", userId, null);
     }
 }

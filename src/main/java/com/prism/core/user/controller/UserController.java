@@ -31,4 +31,11 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success(
                 "Profile updated", userService.updateProfile(userDetails.getUserId(), request)));
     }
+
+    @DeleteMapping("/me")
+    public ResponseEntity<ApiResponse<Void>> deleteAccount(
+            @AuthenticationPrincipal PrismUserDetails userDetails) {
+        userService.deleteUser(userDetails.getUserId());
+        return ResponseEntity.ok(ApiResponse.success("Account deactivated successfully"));
+    }
 }
