@@ -25,9 +25,10 @@ public class ScoreController {
      */
     @PostMapping("/fetch")
     public ResponseEntity<ApiResponse<FetchScoreResponse>> fetchScore(
-            @AuthenticationPrincipal PrismUserDetails userDetails) {
+            @AuthenticationPrincipal PrismUserDetails userDetails,
+            @RequestParam(defaultValue = "false") boolean force) {
         return ResponseEntity.ok(ApiResponse.success(
-                scoringService.fetchOrTriggerScore(userDetails.getUserId())));
+                scoringService.fetchOrTriggerScore(userDetails.getUserId(), force)));
     }
 
     /**
@@ -44,9 +45,10 @@ public class ScoreController {
      */
     @GetMapping("/latest")
     public ResponseEntity<ApiResponse<PrismScoreResponse>> getLatestScore(
-            @AuthenticationPrincipal PrismUserDetails userDetails) {
+            @AuthenticationPrincipal PrismUserDetails userDetails,
+            @RequestParam(defaultValue = "false") boolean breakdown) {
         return ResponseEntity.ok(ApiResponse.success(
-                scoringService.getLatestScore(userDetails.getUserId())));
+                scoringService.getLatestScore(userDetails.getUserId(), breakdown)));
     }
 
     /**

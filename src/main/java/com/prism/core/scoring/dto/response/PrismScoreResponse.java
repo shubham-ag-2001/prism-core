@@ -18,4 +18,9 @@ public class PrismScoreResponse {
     private Instant expiresAt;
     private boolean isCached;
     private String message;
+    
+    private String scoreBand;
+    private com.fasterxml.jackson.databind.JsonNode dimensionBreakdown;
+    private java.util.List<String> killSwitchesTriggered;
+    private java.util.List<String> alerts;
 }

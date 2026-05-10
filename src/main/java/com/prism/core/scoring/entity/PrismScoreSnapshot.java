@@ -53,6 +53,18 @@ public class PrismScoreSnapshot {
     @Column(name = "failure_reason", columnDefinition = "TEXT")
     private String failureReason;
 
+    @Column(name = "dimension_breakdown_json", columnDefinition = "TEXT")
+    private String dimensionBreakdownJson;  // full ScoringResult JSON for audit
+
+    @Column(name = "score_band", length = 20)
+    private String scoreBand;               // Poor / Fair / Average / Good / Very Good / Excellent
+
+    @Column(name = "kill_switches_triggered")
+    private String killSwitchesTriggered;   // JSON array
+
+    @Column(name = "alerts_json")
+    private String alertsJson;              // JSON array
+
     @Column(name = "computed_at")
     private Instant computedAt;
 

@@ -34,6 +34,8 @@ public class ScoringService {
     private final UserRepository                 userRepository;
     private final PrismScoreSnapshotRepository   snapshotRepository;
     private final ScoringJobRepository           scoringJobRepository;
+    private final com.prism.core.scoring.engine.ScoringPipelineOrchestrator orchestrator;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     @Value("${prism.scoring.cache-validity-days:30}")
     private int cacheValidityDays;
@@ -44,21 +46,23 @@ public class ScoringService {
     // ─── Fetch / Trigger Score ────────────────────────────────────────────────
 
     @Transactional
-    public FetchScoreResponse fetchOrTriggerScore(UUID userId) {
-        // 1. Check cache
-        Optional<PrismScoreSnapshot> cached =
-                snapshotRepository.findValidCachedSnapshot(userId, Instant.now());
+    public FetchScoreResponse fetchOrTriggerScore(UUID userId, boolean force) {
+        // 1. Check cache if not forcing re-calculation
+        if (!force) {
+            Optional<PrismScoreSnapshot> cached =
+                    snapshotRepository.findValidCachedSnapshot(userId, Instant.now());
 
-        if (cached.isPresent()) {
-            PrismScoreSnapshot snap = cached.get();
-            log.info("Cache HIT for user={}, score={}", userId, snap.getFinalScore());
-            return FetchScoreResponse.builder()
-                    .cached(true)
-                    .snapshotId(snap.getId())
-                    .prismScore(snap.getFinalScore())
-                    .scoringStatus(snap.getScoringStatus())
-                    .message("Returning cached PRISM score")
-                    .build();
+            if (cached.isPresent()) {
+                PrismScoreSnapshot snap = cached.get();
+                log.info("Cache HIT for user={}, score={}", userId, snap.getFinalScore());
+                return FetchScoreResponse.builder()
+                        .cached(true)
+                        .snapshotId(snap.getId())
+                        .prismScore(snap.getFinalScore())
+                        .scoringStatus(snap.getScoringStatus())
+                        .message("Returning cached PRISM score")
+                        .build();
+            }
         }
 
         // 2. Cache MISS — trigger new scoring pipeline
@@ -113,7 +117,7 @@ public class ScoringService {
     // ─── Latest Score ─────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
-    public PrismScoreResponse getLatestScore(UUID userId) {
+    public PrismScoreResponse getLatestScore(UUID userId, boolean includeBreakdown) {
         PrismScoreSnapshot snap = snapshotRepository
                 .findTopByUserIdAndScoringStatusOrderByComputedAtDesc(userId, ScoringStatus.COMPLETE)
                 .orElseThrow(() -> new PrismException(
@@ -121,15 +125,35 @@ public class ScoringService {
                         org.springframework.http.HttpStatus.NOT_FOUND,
                         ErrorCode.NO_SCORE_AVAILABLE));
 
-        return PrismScoreResponse.builder()
+        PrismScoreResponse.PrismScoreResponseBuilder builder = PrismScoreResponse.builder()
                 .snapshotId(snap.getId())
                 .prismScore(snap.getFinalScore())
+                .scoreBand(snap.getScoreBand())
                 .status(snap.getScoringStatus())
                 .ruleSetVersion(snap.getRuleSetVersion())
                 .computedAt(snap.getComputedAt())
                 .expiresAt(snap.getExpiresAt())
-                .isCached(snap.getExpiresAt() != null && snap.getExpiresAt().isAfter(Instant.now()))
-                .build();
+                .isCached(snap.getExpiresAt() != null && snap.getExpiresAt().isAfter(Instant.now()));
+
+        if (includeBreakdown) {
+            try {
+                if (snap.getDimensionBreakdownJson() != null) {
+                    builder.dimensionBreakdown(objectMapper.readTree(snap.getDimensionBreakdownJson()));
+                }
+                if (snap.getKillSwitchesTriggered() != null) {
+                    builder.killSwitchesTriggered(objectMapper.readValue(snap.getKillSwitchesTriggered(),
+                            objectMapper.getTypeFactory().constructCollectionType(List.class, String.class)));
+                }
+                if (snap.getAlertsJson() != null) {
+                    builder.alerts(objectMapper.readValue(snap.getAlertsJson(),
+                            objectMapper.getTypeFactory().constructCollectionType(List.class, String.class)));
+                }
+            } catch (Exception e) {
+                log.warn("Failed to parse breakdown JSON for snapshot={}", snap.getId(), e);
+            }
+        }
+
+        return builder.build();
     }
 
     // ─── Score History ────────────────────────────────────────────────────────
@@ -153,38 +177,8 @@ public class ScoringService {
 
     @Async("scoringTaskExecutor")
     public void triggerScoringPipelineAsync(UUID jobId) {
-        // TODO (Phase 3): inject ScoringPipelineOrchestrator and call orchestrate(jobId)
-        // This stub simulates a mock score after a short delay for hackathon demo
-        try {
-            Thread.sleep(2000); // simulate processing time
-
-            ScoringJob job = scoringJobRepository.findById(jobId).orElseThrow();
-            job.setStatus(JobStatus.RUNNING);
-            scoringJobRepository.save(job);
-
-            Thread.sleep(3000); // simulate scoring
-
-            PrismScoreSnapshot snapshot = job.getSnapshot();
-            snapshot.setFinalScore(650 + (int)(Math.random() * 200)); // mock: 650–850
-            snapshot.setScoringStatus(ScoringStatus.COMPLETE);
-            snapshot.setComputedAt(Instant.now());
-            snapshot.setExpiresAt(Instant.now().plus(cacheValidityDays, ChronoUnit.DAYS));
-            snapshotRepository.save(snapshot);
-
-            job.setStatus(JobStatus.COMPLETE);
-            job.setCompletedAt(Instant.now());
-            scoringJobRepository.save(job);
-
-            log.info("[MOCK SCORE] job={} score={}", jobId, snapshot.getFinalScore());
-        } catch (Exception e) {
-            log.error("Mock scoring pipeline failed for job={}", jobId, e);
-            try {
-                ScoringJob job = scoringJobRepository.findById(jobId).orElseThrow();
-                job.setStatus(JobStatus.FAILED);
-                job.setFailureReason(e.getMessage());
-                scoringJobRepository.save(job);
-            } catch (Exception ignored) {}
-        }
+        log.info("[Scoring] Starting pipeline for job={}", jobId);
+        orchestrator.orchestrate(jobId);
     }
 
     private String buildJobMessage(JobStatus status) {
