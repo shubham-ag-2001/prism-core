@@ -3,6 +3,7 @@ package com.prism.core.scoring.controller;
 import com.prism.core.common.response.ApiResponse;
 import com.prism.core.common.security.PrismUserDetails;
 import com.prism.core.scoring.dto.response.*;
+import com.prism.core.scoring.service.RecommendationService;
 import com.prism.core.scoring.service.ScoringService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +19,7 @@ import java.util.UUID;
 public class ScoreController {
 
     private final ScoringService scoringService;
+    private final RecommendationService recommendationService;
 
     /**
      * Main entry point — checks 30-day cache, returns score if fresh,
@@ -59,5 +61,16 @@ public class ScoreController {
             @AuthenticationPrincipal PrismUserDetails userDetails) {
         return ResponseEntity.ok(ApiResponse.success(
                 scoringService.getScoreHistory(userDetails.getUserId())));
+    }
+
+    /**
+     * Get AI-generated actionable recommendations to improve the PRISM score.
+     */
+    @GetMapping("/recommendations")
+    public ResponseEntity<ApiResponse<List<RecommendationDto>>> getRecommendations(
+            @AuthenticationPrincipal PrismUserDetails userDetails) {
+        return ResponseEntity.ok(ApiResponse.success(
+                "Recommendations retrieved",
+                recommendationService.getOrGenerateRecommendations(userDetails.getUserId())));
     }
 }
