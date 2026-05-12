@@ -29,6 +29,7 @@ public final class ErrorCode {
     public static final String SCORING_FAILED       = "SCORING_FAILED";
     public static final String SCORING_IN_PROGRESS  = "SCORING_IN_PROGRESS";
     public static final String NO_SCORE_AVAILABLE   = "NO_SCORE_AVAILABLE";
+    public static final String ONBOARDING_INCOMPLETE = "ONBOARDING_INCOMPLETE";
 
     // Provider
     public static final String PROVIDER_ERROR       = "PROVIDER_ERROR";
