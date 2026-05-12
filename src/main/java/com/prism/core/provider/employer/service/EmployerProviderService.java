@@ -56,7 +56,7 @@ public class EmployerProviderService {
 
         log.info("[EMPLOYER] Fetching data for userId={} platform={}", userId, platformKey);
 
-        // Build mock response (Phase 4: replace with real platform API call)
+        // Build full mock response (Phase 4: replace with real platform API call)
         EmployerDataResponse response = buildMockResponse(platform);
 
         // ── Persist employer data to DB ───────────────────────────────────────
@@ -82,30 +82,74 @@ public class EmployerProviderService {
         return response;
     }
 
-    // ─── Mock Builder ─────────────────────────────────────────────────────────
+    // ─── Full Mock Builder (covers all D2, D4, D7 platform fields) ───────────
 
     private EmployerDataResponse buildMockResponse(EmployerPlatform platform) {
         Random rng = new Random();
 
-        int tenureDays   = 180 + rng.nextInt(900);      // 6 months to 3.5 years
-        int totalOrders  = 500 + rng.nextInt(3000);
-        int last30Orders = 20  + rng.nextInt(120);
-        double rating    = Math.round((3.8 + rng.nextDouble() * 1.2) * 10.0) / 10.0;
-        double cancelRate= Math.round(rng.nextDouble() * 0.10 * 1000.0) / 1000.0;
-        int earnings90d  = 15000 + rng.nextInt(60000);
+        int    tenureDays             = 180 + rng.nextInt(900);     // 6 months to ~3.5 years
+        int    totalOrders            = 500 + rng.nextInt(3000);
+        int    last30Orders           = 20  + rng.nextInt(120);
+        double overallRating          = Math.round((3.8 + rng.nextDouble() * 1.2) * 10.0) / 10.0;
+        double ratingLast30d          = Math.round((overallRating + rng.nextDouble() * 0.2 - 0.1) * 10.0) / 10.0;
+        double ratingLast90d          = Math.round((overallRating - rng.nextDouble() * 0.1) * 10.0) / 10.0;
+        double cancellationRate       = Math.round(rng.nextDouble() * 0.08 * 1000.0) / 1000.0;
+        double completionRate         = Math.round((1.0 - cancellationRate) * 100.0 * 10.0) / 10.0;
+        int    earnings90d            = 15000 + rng.nextInt(60000);
+
+        // Activity signals
+        double ordersPerActiveDay     = Math.round((last30Orders / 22.0) * 10.0) / 10.0;
+        double activeDaysPerWeek      = Math.round((3.5 + rng.nextDouble() * 3.0) * 10.0) / 10.0;
+        double accountAgeActiveRatio  = Math.min(1.0, Math.round((totalOrders / (tenureDays * 4.0)) * 100.0) / 100.0);
+        int    longestInactivityDays  = 3 + rng.nextInt(14);
+        int    gapFrequency90d        = rng.nextInt(5);
+        double peakHourRate           = Math.round((0.4 + rng.nextDouble() * 0.5) * 100.0) / 100.0;
+        boolean cancellationSpike     = cancellationRate > 0.06;
+
+        // Social signals
+        double repeatCustomerRatio    = Math.round((0.10 + rng.nextDouble() * 0.25) * 100.0) / 100.0;
+        int    unresolvedDisputes     = rng.nextInt(3);
+        boolean disputeSpike          = unresolvedDisputes > 1;
+        double responseRateToOffers   = Math.round((0.55 + rng.nextDouble() * 0.40) * 100.0) / 100.0;
+
+        // Temporal signals
+        double consecutiveMonths      = Math.min(tenureDays / 30.0, 24.0);
+        double completionRateDrift    = Math.round((-2.0 + rng.nextDouble() * 3.0) * 10.0) / 10.0; // neg = improving
+        double reliabilityScore       = Math.min(95.0, consecutiveMonths * 3.5);
 
         return EmployerDataResponse.builder()
                 .platformKey(platform.getPlatformKey())
                 .platformName(platform.getDisplayName())
                 .accountStatus("ACTIVE")
-                .accountTenureDays(tenureDays)
-                .overallRating(rating)
-                .totalCompletedOrders(totalOrders)
-                .activeOrdersLast30Days(last30Orders)
-                .cancellationRate(cancelRate)
-                .totalEarningsLast90DaysRupees(earnings90d)
                 .employerCategory(platform.getCategory())
                 .isMock(true)
+                // D2
+                .accountTenureDays(tenureDays)
+                .orderCompletionRate(completionRate)
+                .totalCompletedOrders(totalOrders)
+                .activeOrdersLast30Days(last30Orders)
+                .ordersPerActiveDay(ordersPerActiveDay)
+                .activeDaysPerWeek(activeDaysPerWeek)
+                .accountAgeActiveRatio(accountAgeActiveRatio)
+                .longestInactivityStreakDays(longestInactivityDays)
+                .gapFrequency90d(gapFrequency90d)
+                .peakHourParticipationRate(peakHourRate)
+                .cancellationRate(cancellationRate)
+                .cancellationSpikeFlag(cancellationSpike)
+                // D4
+                .overallRating(overallRating)
+                .ratingLast30d(ratingLast30d)
+                .ratingLast90d(ratingLast90d)
+                .repeatCustomerRatio(repeatCustomerRatio)
+                .unresolvedDisputeCount(unresolvedDisputes)
+                .disputeSpikeFlag(disputeSpike)
+                .responseRateToOffers(responseRateToOffers)
+                // D7
+                .consecutiveActiveMonths(consecutiveMonths)
+                .completionRateDrift(completionRateDrift)
+                .tenureWeightedReliabilityScore(reliabilityScore)
+                // Financials
+                .totalEarningsLast90DaysRupees(earnings90d)
                 .build();
     }
 }

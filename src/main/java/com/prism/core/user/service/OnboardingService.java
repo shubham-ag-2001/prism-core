@@ -7,6 +7,7 @@ import com.prism.core.common.enums.OtpPurpose;
 import com.prism.core.common.enums.VerificationStatus;
 import com.prism.core.common.exception.ErrorCode;
 import com.prism.core.common.exception.PrismException;
+import com.prism.core.provider.pan.service.PanSignalService;
 import com.prism.core.user.dto.request.OnboardingRequest;
 import com.prism.core.user.dto.request.VerifyPanOtpRequest;
 import com.prism.core.user.dto.response.OnboardingStatusResponse;
@@ -40,6 +41,7 @@ public class OnboardingService {
     private final OnboardingDataRepository  onboardingDataRepository;
     private final PanVerificationRepository panVerificationRepository;
     private final OtpRecordRepository       otpRecordRepository;
+    private final PanSignalService          panSignalService;
 
     @Value("${prism.otp.expiry-minutes:5}")
     private int otpExpiryMinutes;
@@ -130,6 +132,10 @@ public class OnboardingService {
         data.setStatus(OnboardingStatus.COMPLETED);
         onboardingDataRepository.save(data);
         log.info("PAN verified and onboarding completed for user={}", userId);
+
+        // ── Trigger PAN/bureau signal fetch ───────────────────────────────────
+        // Store credit bureau signals (RSK01, TMP04, debt ratio) derived from PAN
+        panSignalService.fetchAndPersistPanSignals(userId, data.getPanNumber());
 
         return buildStatusResponse(userId, data, verification);
     }

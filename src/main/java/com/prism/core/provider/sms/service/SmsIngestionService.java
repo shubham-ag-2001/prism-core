@@ -113,7 +113,12 @@ public class SmsIngestionService {
         mock.put("remittance_consistency_score",  "75.0");
         mock.put("spending_last_30d",             "11000.00");
         mock.put("spending_last_90d",             "33000.00");
-        mock.put("debt_to_income_ratio",          "0.15");
+        mock.put("debt_to_income_ratio",          "0.15");  // fallback; PAN bureau is preferred source
+        // D7 — Temporal (SMS-derived fields per spec)
+        mock.put("income_stability_windows",                  "5.0");
+        mock.put("spend_ratio_drift",                         "2.0");
+        mock.put("post_disruption_income_recovery_days",      "8.0");
+        mock.put("post_disruption_activity_recovery_days",    "6.0");
         return mock;
     }
 }

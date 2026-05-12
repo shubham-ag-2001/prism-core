@@ -1,6 +1,7 @@
 package com.prism.core.scoring.service;
 
 import com.prism.core.common.enums.JobStatus;
+import com.prism.core.common.enums.OnboardingStatus;
 import com.prism.core.common.enums.ScoringStatus;
 import com.prism.core.common.enums.TriggerType;
 import com.prism.core.common.exception.ErrorCode;
@@ -10,7 +11,9 @@ import com.prism.core.scoring.entity.PrismScoreSnapshot;
 import com.prism.core.scoring.entity.ScoringJob;
 import com.prism.core.scoring.repository.PrismScoreSnapshotRepository;
 import com.prism.core.scoring.repository.ScoringJobRepository;
+import com.prism.core.user.entity.OnboardingData;
 import com.prism.core.user.entity.User;
+import com.prism.core.user.repository.OnboardingDataRepository;
 import com.prism.core.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +35,7 @@ import java.util.stream.Collectors;
 public class ScoringService {
 
     private final UserRepository                 userRepository;
+    private final OnboardingDataRepository       onboardingDataRepository;
     private final PrismScoreSnapshotRepository   snapshotRepository;
     private final ScoringJobRepository           scoringJobRepository;
     private final com.prism.core.scoring.engine.ScoringPipelineOrchestrator orchestrator;
@@ -65,7 +69,15 @@ public class ScoringService {
             }
         }
 
-        // 2. Cache MISS — trigger new scoring pipeline
+        // 2. Cache MISS — check onboarding gate before triggering pipeline
+        OnboardingData onboarding = onboardingDataRepository.findByUserId(userId).orElse(null);
+        if (onboarding == null || onboarding.getStatus() != OnboardingStatus.COMPLETED) {
+            throw new PrismException(
+                    "Please complete onboarding before fetching your PRISM score.",
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    ErrorCode.ONBOARDING_INCOMPLETE);
+        }
+
         log.info("Cache MISS for user={}, creating new scoring job", userId);
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> PrismException.notFound("User not found"));

@@ -4,6 +4,7 @@ public enum ProviderType {
     SMS,
     PLATFORM,
     PAN,
+    DEVICE,   // device-integrity signals (RSK05 flags)
     SELF,
     LLM
 }
