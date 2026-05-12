@@ -156,6 +156,16 @@ public class ScoringService {
         return builder.build();
     }
 
+    // ─── Last Computed Time ───────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public Long getLastScoreComputedTime(UUID userId) {
+        return snapshotRepository
+                .findTopByUserIdAndScoringStatusOrderByComputedAtDesc(userId, ScoringStatus.COMPLETE)
+                .map(snap -> snap.getComputedAt().toEpochMilli())
+                .orElse(null);
+    }
+
     // ─── Score History ────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)

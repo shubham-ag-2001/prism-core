@@ -5,6 +5,7 @@ import com.prism.core.common.security.PrismUserDetails;
 import com.prism.core.provider.sms.dto.SmsIngestRequest;
 import com.prism.core.provider.sms.dto.SmsIngestResponse;
 import com.prism.core.provider.sms.service.SmsIngestionService;
+import com.prism.core.scoring.service.ScoringService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,16 @@ import org.springframework.web.bind.annotation.*;
 public class SmsIngestionController {
 
     private final SmsIngestionService smsIngestionService;
+    private final ScoringService scoringService;
+
+    @GetMapping("/last_fetched")
+    public ResponseEntity<ApiResponse<Long>> getLastFetched(
+            @AuthenticationPrincipal PrismUserDetails userDetails) {
+        Long lastComputedTime = scoringService.getLastScoreComputedTime(userDetails.getUserId());
+        return ResponseEntity.ok(ApiResponse.success(
+                lastComputedTime != null ? "Last score calculation time retrieved" : "No score calculated yet",
+                lastComputedTime));
+    }
 
     @PostMapping("/ingest")
     public ResponseEntity<ApiResponse<SmsIngestResponse>> ingestSms(
