@@ -3,6 +3,9 @@ package com.prism.core.scoring.engine;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prism.core.common.enums.JobStatus;
 import com.prism.core.common.enums.ScoringStatus;
+import com.prism.core.provider.repository.ProviderResponseRepository;
+import com.prism.core.provider.repository.RawSignalRepository;
+import com.prism.core.provider.service.SignalAggregatorService;
 import com.prism.core.scoring.engine.model.ScoringInput;
 import com.prism.core.scoring.engine.model.ScoringResult;
 import com.prism.core.scoring.entity.PrismScoreSnapshot;
@@ -41,6 +44,9 @@ public class ScoringPipelineOrchestrator {
     private final ScoringJobRepository             jobRepository;
     private final PrismScoreSnapshotRepository     snapshotRepository;
     private final UserProfileRepository            userProfileRepository;
+    private final SignalAggregatorService          signalAggregator;
+    private final RawSignalRepository              rawSignalRepository;
+    private final ProviderResponseRepository       providerResponseRepository;
     private final ObjectMapper                     objectMapper;
 
     private static final int CACHE_DAYS = 30;
@@ -90,11 +96,24 @@ public class ScoringPipelineOrchestrator {
     /**
      * Assemble ScoringInput for a user.
      *
-     * Phase 3 / Hackathon: returns a realistic baseline mock input.
-     * Phase 4: replace this with real data reads from RawSignal
-     *           and ProviderResponse rows for the user.
+     * Signal priority:
+     *  1. If SMS signals OR employer data exist in DB → use SignalAggregatorService (real data)
+     *  2. Otherwise → use buildDefaultInput() as hackathon fallback
+     *
+     * Phase 4 complete: real data is used when available.
      */
     private ScoringInput buildInput(User user) {
+        boolean hasSms      = rawSignalRepository.existsByUserId(user.getId());
+        boolean hasEmployer = providerResponseRepository.existsByUserIdAndProviderType(
+                user.getId(), com.prism.core.common.enums.ProviderType.PLATFORM);
+
+        if (hasSms || hasEmployer) {
+            log.info("[Orchestrator] Real signals found for userId={} (hasSms={}, hasEmployer={})",
+                    user.getId(), hasSms, hasEmployer);
+            return signalAggregator.aggregate(user);
+        }
+
+        log.info("[Orchestrator] No signals for userId={}, using default baseline", user.getId());
         return buildDefaultInput(user);
     }
 
