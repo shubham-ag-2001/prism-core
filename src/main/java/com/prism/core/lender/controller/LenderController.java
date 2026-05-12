@@ -29,6 +29,6 @@ public class LenderController {
         var user = userRepository.findByPhone(phone)
                 .orElseThrow(() -> PrismException.notFound("No user found with this phone number"));
 
-        return ResponseEntity.ok(ApiResponse.success(scoringService.getLatestScore(user.getId())));
+        return ResponseEntity.ok(ApiResponse.success(scoringService.getLatestScore(user.getId(), false)));
     }
 }
