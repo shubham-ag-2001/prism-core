@@ -65,6 +65,7 @@ public class ScoreController {
 
     /**
      * Get AI-generated actionable recommendations to improve the PRISM score.
+     * Returns cached recs if available (within 24h). For fresh LLM generation use /generate.
      */
     @GetMapping("/recommendations")
     public ResponseEntity<ApiResponse<List<RecommendationDto>>> getRecommendations(
@@ -72,5 +73,30 @@ public class ScoreController {
         return ResponseEntity.ok(ApiResponse.success(
                 "Recommendations retrieved",
                 recommendationService.getOrGenerateRecommendations(userDetails.getUserId())));
+    }
+
+    /**
+     * Trigger async LLM recommendation generation.
+     * Returns a jobId immediately — poll /recommendations/status/{jobId} for results.
+     */
+    @PostMapping("/recommendations/generate")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> triggerRecommendations(
+            @AuthenticationPrincipal PrismUserDetails userDetails) {
+        UUID jobId = recommendationService.triggerAsyncGeneration(userDetails.getUserId());
+        return ResponseEntity.accepted().body(ApiResponse.success(
+                "Recommendation generation started. Poll status endpoint for results.",
+                java.util.Map.of("jobId", jobId, "pollUrl", "/api/v1/score/recommendations/status/" + jobId)
+        ));
+    }
+
+    /**
+     * Poll the status of an async recommendation generation job.
+     * When status=DONE, the recommendations array is included in the response.
+     */
+    @GetMapping("/recommendations/status/{jobId}")
+    public ResponseEntity<ApiResponse<com.prism.core.scoring.dto.response.RecommendationJobStatusResponse>> getRecommendationJobStatus(
+            @PathVariable UUID jobId) {
+        return ResponseEntity.ok(ApiResponse.success(
+                recommendationService.getJobStatus(jobId)));
     }
 }

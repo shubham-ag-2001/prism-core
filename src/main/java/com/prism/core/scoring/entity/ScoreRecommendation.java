@@ -1,5 +1,6 @@
 package com.prism.core.scoring.entity;
 
+import com.prism.core.scoring.entity.RecommendationJob;
 import com.prism.core.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -37,6 +38,14 @@ public class ScoreRecommendation {
 
     @Column(name = "description", columnDefinition = "TEXT", nullable = false)
     private String description;
+
+    @Column(name = "source", nullable = false, length = 10)
+    @Builder.Default
+    private String source = "MOCK";  // MOCK | LLM
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "job_id")
+    private RecommendationJob job;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)

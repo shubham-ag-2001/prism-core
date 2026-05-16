@@ -15,5 +15,7 @@ public interface ScoreRecommendationRepository extends JpaRepository<ScoreRecomm
 
     List<ScoreRecommendation> findByUserIdAndCreatedAtAfterOrderByCreatedAtDesc(UUID userId, Instant after);
 
+    List<ScoreRecommendation> findByJobId(UUID jobId);
+
     void deleteByUserId(UUID userId);
 }

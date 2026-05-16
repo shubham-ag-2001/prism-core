@@ -17,5 +17,6 @@ public class RecommendationDto {
     private String category;
     private String title;
     private String description;
+    private String source;          // MOCK | LLM
     private Instant createdAt;
 }

@@ -42,6 +42,12 @@ prism:
     cache-validity-days: 30
     current-rule-set-version: "v1.0"
 
+  llm:
+    use-llm: true                           # true = call local Ollama; false = use hardcoded mock
+    ollama-base-url: http://localhost:11434
+    ollama-model: llama3.1:8b
+    timeout-seconds: 120                    # LLM can be slow on CPU
+
   mock:
     sms-extractor-base-url: http://localhost:8080/mock/sms-extractor
     pan-verifier-base-url: http://localhost:8080/mock/pan-verifier
@@ -53,4 +59,5 @@ server:
 logging:
   level:
     com.prism: DEBUG
+    com.prism.core.provider.llm: DEBUG    # Shows full prompt + raw LLM response
     org.springframework.security: INFO
