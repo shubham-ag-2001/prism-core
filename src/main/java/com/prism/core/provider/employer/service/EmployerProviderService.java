@@ -37,6 +37,11 @@ public class EmployerProviderService {
     public List<EmployerPlatformDto> getActivePlatforms() {
         return employerPlatformRepository.findAllByActiveTrue()
                 .stream()
+                .sorted((a, b) -> {
+                    if ("GRAB".equals(a.getPlatformKey())) return -1;
+                    if ("GRAB".equals(b.getPlatformKey())) return 1;
+                    return a.getDisplayName().compareToIgnoreCase(b.getDisplayName());
+                })
                 .map(p -> EmployerPlatformDto.builder()
                         .platformKey(p.getPlatformKey())
                         .displayName(p.getDisplayName())

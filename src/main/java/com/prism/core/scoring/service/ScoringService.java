@@ -63,6 +63,7 @@ public class ScoringService {
                         .cached(true)
                         .snapshotId(snap.getId())
                         .prismScore(snap.getFinalScore())
+                        .scoreBand(snap.getScoreBand())
                         .scoringStatus(snap.getScoringStatus())
                         .message("Returning cached PRISM score")
                         .build();

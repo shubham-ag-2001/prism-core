@@ -4,8 +4,8 @@ import com.prism.core.common.response.ApiResponse;
 import com.prism.core.common.security.PrismUserDetails;
 import com.prism.core.provider.sms.dto.SmsIngestRequest;
 import com.prism.core.provider.sms.dto.SmsIngestResponse;
+import com.prism.core.provider.sms.dto.SmsLastFetchedResponse;
 import com.prism.core.provider.sms.service.SmsIngestionService;
-import com.prism.core.scoring.service.ScoringService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,17 +18,31 @@ import org.springframework.web.bind.annotation.*;
 public class SmsIngestionController {
 
     private final SmsIngestionService smsIngestionService;
-    private final ScoringService scoringService;
 
+    /**
+     * GET /api/v1/providers/sms/last_fetched
+     *
+     * Returns:
+     *  - smsLastIngested      : epoch-ms when sms/ingest was last called for this user
+     *  - scoreLastCalculated  : epoch-ms when the PRISM score was last calculated
+     *
+     * The FE uses smsLastIngested to decide whether to re-trigger SMS ingestion
+     * (allowed once every 30 days), and scoreLastCalculated to show the score age.
+     */
     @GetMapping("/last_fetched")
-    public ResponseEntity<ApiResponse<Long>> getLastFetched(
+    public ResponseEntity<ApiResponse<SmsLastFetchedResponse>> getLastFetched(
             @AuthenticationPrincipal PrismUserDetails userDetails) {
-        Long lastComputedTime = scoringService.getLastScoreComputedTime(userDetails.getUserId());
-        return ResponseEntity.ok(ApiResponse.success(
-                lastComputedTime != null ? "Last score calculation time retrieved" : "No score calculated yet",
-                lastComputedTime));
+        SmsLastFetchedResponse response = smsIngestionService.getLastFetched(userDetails.getUserId());
+        return ResponseEntity.ok(ApiResponse.success("Timestamps retrieved", response));
     }
 
+    /**
+     * POST /api/v1/providers/sms/ingest
+     *
+     * Flow: receive raw SMS messages  →  call 3rd-party extractor (or mock)
+     *       →  persist extracted characteristics as raw_signal rows in DB
+     *       →  return simple ack (characteristics are NOT returned to caller)
+     */
     @PostMapping("/ingest")
     public ResponseEntity<ApiResponse<SmsIngestResponse>> ingestSms(
             @AuthenticationPrincipal PrismUserDetails userDetails,

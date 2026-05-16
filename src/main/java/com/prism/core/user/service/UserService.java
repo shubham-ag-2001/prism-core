@@ -7,8 +7,10 @@ import com.prism.core.user.dto.request.UpdateProfileRequest;
 import com.prism.core.user.dto.response.UserProfileResponse;
 import com.prism.core.user.entity.User;
 import com.prism.core.user.entity.UserProfile;
+import com.prism.core.user.entity.OnboardingData;
 import com.prism.core.user.repository.UserProfileRepository;
 import com.prism.core.user.repository.UserRepository;
+import com.prism.core.user.repository.OnboardingDataRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +24,7 @@ public class UserService {
     private final UserRepository        userRepository;
     private final UserProfileRepository userProfileRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final OnboardingDataRepository onboardingDataRepository;
     private final AuditService           auditService;
 
     @Transactional(readOnly = true)
@@ -30,6 +33,7 @@ public class UserService {
                 .orElseThrow(() -> PrismException.notFound("User not found"));
 
         UserProfile profile = userProfileRepository.findByUserId(userId).orElse(null);
+        OnboardingData onboardingData = onboardingDataRepository.findByUserId(userId).orElse(null);
 
         return UserProfileResponse.builder()
                 .userId(user.getId())
@@ -41,6 +45,7 @@ public class UserService {
                 .dateOfBirth(profile != null ? profile.getDateOfBirth() : null)
                 .city(profile != null ? profile.getCity() : null)
                 .state(profile != null ? profile.getState() : null)
+                .pan(onboardingData != null ? onboardingData.getPanNumber() : null)
                 .build();
     }
 
