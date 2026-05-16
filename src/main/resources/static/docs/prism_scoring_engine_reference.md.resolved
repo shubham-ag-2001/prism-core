@@ -1,0 +1,295 @@
+# PRISM Scoring Engine — Complete Technical Reference
+
+## 1. Architecture Overview
+
+```
+Android App / API Clients
+        │
+        ▼
+┌───────────────────────┐
+│   Signal Ingestion    │  /providers/sms/ingest
+│   (3 APIs)            │  /device/info
+│                       │  /providers/employer/{platform}
+└──────────┬────────────┘
+           │ persists to
+           ▼
+┌───────────────────────┐
+│   raw_signal table    │  (key-value store per user per provider_type)
+│   provider_response   │  (employer JSON blob)
+└──────────┬────────────┘
+           │ read by
+           ▼
+┌───────────────────────┐
+│ SignalAggregatorService│  Builds unified ScoringInput from all sources
+└──────────┬────────────┘
+           │ feeds
+           ▼
+┌───────────────────────┐
+│   ScoringEngineV1     │  Computes 7 dimensions → 900-point score
+└──────────┬────────────┘
+           │ writes
+           ▼
+┌───────────────────────┐
+│ prism_score_snapshot  │  Final score, band, dimension breakdown, alerts
+└───────────────────────┘
+```
+
+---
+
+## 2. Signal Sources
+
+| Source | Provider Type | What It Provides | Dimensions |
+|--------|--------------|-----------------|------------|
+| SMS transactions | `SMS` | Income, spending, missed payments, balance | D1, D3, D7 |
+| Employer platform | `PLATFORM` | Gig activity, ratings, tenure | D2, D4, D7 |
+| PAN bureau | `PAN` | Prior default, debt ratio, payment streak | D5(RSK01), D3(SPD10), D7(TMP04) |
+| Device telemetry | `DEVICE` | App list, root/emulator flags | D5(RSK05) |
+| Onboarding (SELF) | internal | KYC tier, phone vintage | D6 |
+
+**Key rule:** For each signal key, the **most-recent `raw_signal` row wins** (DESC by `created_at`).
+Missing signals fall back to **safe neutral defaults** — never zero, never maximum.
+
+---
+
+## 3. Signal Aggregation (SignalAggregatorService)
+
+Before scoring, all signals are merged into a single `ScoringInput` object:
+
+```
+readSignals(userId, SMS)      → Map<key, value>
+readSignals(userId, PAN)      → Map<key, value>
+readSignals(userId, DEVICE)   → Map<key, value>
+readLatestEmployerData(userId) → EmployerDataResponse (parsed JSON)
+```
+
+**Priority:** PAN data wins over SMS for `debt_to_income_ratio` (PAN bureau is more authoritative).
+
+---
+
+## 4. The 7 Scoring Dimensions
+
+Final score = sum of all dimension scores, clamped to [300, 900].
+Each dimension has a MIN (floor) and MAX. Even with all-zero signals, dimension = its MIN.
+
+### D1 — INCOME (min: 60, max: 180)
+*Source: SMS raw_signals*
+
+| Vector | Key Signal(s) | Max Pts | Notes |
+|--------|--------------|---------|-------|
+| INC01 | avg_weekly_credit_sms_90d (65%) + income_spike_ratio (35%) | 28 | Spike ratio: 1.0–1.2 ideal, >2.5 = bad |
+| INC02 | income_cv | 22 | Lower CV = more stable = higher score |
+| INC03 | income_growth_feb_to_mar + income_growth_mar_to_apr (avg) | 16 | Positive growth = 100pts; -15%+ = 0pts |
+| INC04 | low_income_week_count_90d (55%) + avg_recovery_weeks (45%) | 18 | Both CRITICAL weight |
+| INC05 | seasonal_adjustment_factor | 8 | ≥0.98 = 100pts |
+| INC06 | platform_income_source_count (60%) + has_non_gig_income (40%) | 14 | Multiple income sources = higher |
+| INC07 | income_last_30d / (income_last_90d / 3) ratio | 14 | Ratio ≥1.15 = growing income = 100pts |
+
+---
+
+### D2 — ACTIVITY (min: 45, max: 150)
+*Source: Employer PLATFORM API (EmployerDataResponse)*
+*If no employer data: hardcoded neutral defaults apply*
+
+| Vector | Key Signal | Max Pts |
+|--------|-----------|---------|
+| ACT01 | accountTenureDays | 14 |
+| ACT02 | orderCompletionRate (%) | 24 |
+| ACT03 | ordersPerActiveDay | 16 |
+| ACT04 | activeDaysPerWeek | 18 |
+| ACT05 | accountAgeActiveRatio | 12 |
+| ACT06 | longestInactivityStreakDays (60%) + gapFrequency90d (40%) | 10 |
+| ACT07 | peakHourParticipationRate | 7 |
+| ACT08 | lateCancellationRatio (55%) + cancellationSpikeFlag (45%) | 4 |
+
+**Cap:** If `cancellationSpikeFlag = true` → ACT08 capped at 20 pts.
+
+---
+
+### D3 — SPENDING (min: 50, max: 150)
+*Source: SMS, with PAN for debt_to_income_ratio*
+
+| Vector | Key Signal(s) | Max Pts | Notes |
+|--------|--------------|---------|-------|
+| SPD01 | wallet_topup_frequency | 6 | |
+| SPD02 | spend_to_earn_ratio | 18 | >1.2 = 0pts (spending more than earning) |
+| SPD03 | avg_month_end_balance (40%) + negative_balance_flag (60%) | 16 | neg_flag=true → capped at 25 pts |
+| SPD04 | spend_volatility_index | 10 | |
+| SPD05 | discretionary_spend_ratio (45%) + gambling_fantasy_spend_flag (55%) | 12 | gambling=true → capped at 20 pts |
+| SPD06 | large_transaction_frequency | 8 | |
+| SPD07 | missed_instalment_count_90d (65%) + active_instalment_count (35%) | 14 | ≥3 missed → capped at 15 pts |
+| SPD08 | monthly_remittance_amount (40%) + remittance_consistency_score (60%) | 8 | |
+| SPD09 | spending_last_30d / (spending_last_90d / 3) ratio | 6 | ≥1.2 = 0pts (increasing spend trend) |
+| SPD10 | debt_to_income_ratio | 2 | Sourced from PAN if available, else SMS |
+
+---
+
+### D4 — SOCIAL (min: 20, max: 80)
+*Source: Employer PLATFORM API*
+
+| Vector | Key Signal(s) | Max Pts | Notes |
+|--------|--------------|---------|-------|
+| SOC01 | overallRating | 22 | <3.0 = 0pts, ≥4.8 = 100pts |
+| SOC02 | ratingLast30d / ratingLast90d ratio | 14 | Trend matters, not just absolute |
+| SOC03 | repeatCustomerRatio | 12 | |
+| SOC04 | unresolvedDisputeCount (70%) + disputeSpikeFlag (30%) | 8 | ≥3 unresolved → capped at 10 pts |
+| SOC05 | responseRateToOffers | 4 | |
+
+---
+
+### D5 — RISK & INTEGRITY (min: 55, max: 160)
+*Source: PAN (RSK01), SELF/platform (RSK02, RSK04), DEVICE (RSK05)*
+
+**Kill Switch Logic (evaluated first):**
+- `RSK01 (rsk01_prior_default = true)` → **D5 entire dimension = 55 (min)**, regardless of all other signals. Alert added.
+- `RSK04 (rsk04_multiple_account_detected = true)` → same total collapse.
+
+If no kill switch:
+
+| Vector | Source | Key Signal(s) | Max Pts |
+|--------|--------|--------------|---------|
+| RSK01 | PAN | rsk01_prior_default | 35 |
+| RSK02 | SELF | unusual_login_location_flag (45%) + multiple_device_login_flag (55%) | 20 |
+| RSK04 | SELF | rsk04_multiple_account_detected | 30 |
+| RSK05 | DEVICE | 6 sub-flags (see below) | 20 |
+
+---
+
+## 5. Platform-Owned Feature Derivation (RSK05 Deep Dive)
+
+RSK05 is the **only dimension computed entirely by PRISM** from raw device input.
+
+### Step 1 — App receives from Android app:
+```json
+{
+  "appList": ["com.topjohnwu.magisk", "com.dream11", "com.whatsapp", ...],
+  "deviceMetadata": {
+    "isRooted": true,
+    "isDeveloperModeEnabled": false,
+    "isEmulator": false
+  }
+}
+```
+
+### Step 2 — PRISM derives flags (DeviceSignalProcessorService):
+
+```
+has_location_spoof_app    = appList ∩ LOCATION_SPOOF_APPS is non-empty
+has_record_fabrication_tools = appList ∩ FABRICATION_APPS is non-empty
+is_device_rooted          = deviceMetadata.isRooted (self-reported)
+is_developer_mode_on      = deviceMetadata.isDeveloperModeEnabled (self-reported)
+is_emulator               = deviceMetadata.isEmulator (self-reported)
+has_unofficial_apks       = has_record_fabrication_tools OR is_device_rooted
+credit_hungry_score       = min(100, count(appList ∩ CREDIT_HUNGRY_APPS) × 20)
+```
+
+### Step 3 — App blocklists used:
+
+**LOCATION_SPOOF_APPS (→ has_location_spoof_app)**
+- com.lexa.fakegps
+- com.incorporateapps.fakegps.fre
+- com.hola.fake.gps.location
+- ru.gavrikov.mocklocations
+- com.byterev.mockgpspro
+- com.blogspot.newapphorizons.fakegps
+
+**FABRICATION_APPS (→ has_record_fabrication_tools)**
+- de.robv.android.xposed.installer (Xposed)
+- com.topjohnwu.magisk (Magisk)
+- org.lsposed.manager (LSPosed)
+- com.lucky.draw.ludo
+- io.va.exposed (VirtualXposed)
+
+**CREDIT_HUNGRY_APPS (→ credit_hungry_score)**
+- com.dream11 (Dream11)
+- com.myfab11 (MyFab11)
+- com.myteam11.fantasy (MyTeam11)
+- com.sportzbet.fantasy (Sportzbet)
+- in.redball.rummy (Redball Rummy)
+- Each app = +20 pts to credit_hungry_score (max 100)
+
+### Step 4 — RSK05 Weighted Score + Caps:
+
+```
+RSK05 raw = 0.30 × score(has_location_spoof_app)
+          + 0.25 × score(has_record_fabrication_tools)
+          + 0.20 × score(is_device_rooted)
+          + 0.10 × score(has_unofficial_apks)
+          + 0.10 × score(credit_hungry_score)
+          + 0.05 × score(is_developer_mode_on)
+```
+
+Scoring functions (all return 0–100):
+- Boolean flags: `true → 0 pts, false → 100 pts` (bad flag = low score)
+- credit_hungry_score: `≤10→100, ≤20→85, ≤35→65, ≤50→45, ≤65→25, ≤80→10, >80→0`
+
+**Hard caps applied after scoring:**
+```
+if (has_location_spoof_app) → RSK05 capped at 15 pts max
+if (has_record_fabrication_tools) → RSK05 capped at 15 pts max
+if (is_device_rooted) → RSK05 capped at 20 pts max
+→ effective cap = min of all applicable caps
+```
+
+Final RSK05 contribution = `min(RSK05_raw, effective_cap) / 100 × RSK05_MAX(20)`
+
+---
+
+### D6 — IDENTITY (min: 55, max: 100)
+*Source: Onboarding data (SELF)*
+
+| Vector | Key Signal | Max Pts | Notes |
+|--------|-----------|---------|-------|
+| IDN01 | KYC Identity Tier | 30 | 0→0, 1(basic)→55%, 2(PAN verified)→100% |
+| IDN02 | Phone vintage (days since registration) | 15 | <90d=5pts, ≥5yrs=100pts |
+
+---
+
+### D7 — TEMPORAL CONSISTENCY (min: 15, max: 80)
+*Source: Employer (TMP01, TMP03 partial, TMP06) + SMS (TMP02, TMP03 partial) + PAN (TMP04)*
+
+| Vector | Key Signal | Max Pts |
+|--------|-----------|---------|
+| TMP01 | consecutiveActiveMonths (employer) | 18 |
+| TMP02 | income_stability_windows (SMS) | 16 |
+| TMP03 | spend_ratio_drift (SMS) + completionRateDrift (employer) | 12 |
+| TMP04 | longest_ontime_payment_streak (PAN) | 10 |
+| TMP05 | post_disruption_income_recovery + activity_recovery | 5 |
+| TMP06 | tenureWeightedReliabilityScore (employer) | 4 |
+
+---
+
+## 6. Final Score Assembly
+
+```java
+rawTotal = D1 + D2 + D3 + D4 + D5 + D6 + D7
+finalScore = clamp(round(rawTotal), 300, 900)
+```
+
+| Band | Range |
+|------|-------|
+| Poor | 300–449 |
+| Fair | 450–549 |
+| Average | 550–649 |
+| Good | 650–749 |
+| Very Good | 750–849 |
+| Excellent | 850–900 |
+
+---
+
+## 7. Null Signal Handling
+
+When a signal is missing (null):
+- `selfVec()` → reduces the dimension's effective max (other vectors absorb the weight)
+- `weightedVector()` → if critical flag is null, treats as safe default
+- **Effect:** Missing signals never crash the engine; they reduce the ceiling but don't penalize to zero
+
+---
+
+## 8. Key Design Invariants
+
+1. **Kill switches collapse D5 to 55 (min)** — prior default or multi-account detection
+2. **Hard caps on RSK05** — location spoof/rooted devices can never score above 15–20 pts in RSK05
+3. **Caps on D3** — gambling flag (SPD05 ≤20), negative balance (SPD03 ≤25), 3+ missed instalments (SPD07 ≤15)
+4. **Cap on D2** — cancellation spike (ACT08 ≤20)
+5. **Floor on D4** — 3+ unresolved disputes (SOC04 ≤10)
+6. **Most-recent signal wins** — any API call after seeding will override calibrated values
