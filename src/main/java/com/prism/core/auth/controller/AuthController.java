@@ -42,7 +42,9 @@ public class AuthController {
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(
             @AuthenticationPrincipal PrismUserDetails userDetails) {
-        authService.logout(userDetails.getUserId());
+        if (userDetails != null) {
+            authService.logout(userDetails.getUserId());
+        }
         return ResponseEntity.ok(ApiResponse.success("Logged out successfully"));
     }
 }

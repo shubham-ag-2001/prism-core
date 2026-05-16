@@ -19,4 +19,5 @@ public class UserProfileResponse {
     private String city;
     private String state;
     private boolean isActive;
+    private String pan;
 }

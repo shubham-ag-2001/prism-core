@@ -14,6 +14,7 @@ public class FetchScoreResponse {
     private UUID jobId;                   // present when a new job was triggered
     private UUID snapshotId;              // present when returning a cached score
     private Integer prismScore;           // present when returning a cached score
+    private String scoreBand;             // Poor / Fair / Average / Good / Very Good / Excellent
     private ScoringStatus scoringStatus;
     private JobStatus jobStatus;
     private String message;

@@ -47,6 +47,7 @@ prism:
     pan-verifier-base-url: http://localhost:8080/mock/pan-verifier
 
 server:
+  address: 0.0.0.0
   port: 8080
 
 logging:
